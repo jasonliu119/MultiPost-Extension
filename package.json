@@ -74,7 +74,7 @@
       "matches": ["https://paiban.md/*", "http://localhost:2663/*"]
     },
     "host_permissions": ["https://*/*"],
-    "permissions": ["activeTab", "tabs", "scripting", "tabGroups", "sidePanel", "clipboardWrite", "clipboardRead"],
+    "permissions": ["activeTab", "tabs", "scripting", "tabGroups", "sidePanel", "clipboardWrite", "clipboardRead", "alarms"],
     "web_accessible_resources": [
       {
         "resources": ["assets/icon.png"],

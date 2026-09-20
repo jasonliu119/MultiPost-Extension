@@ -16,6 +16,7 @@ import {
   tabsManagerMessageHandler,
 } from "./services/tabs";
 import { trustDomainMessageHandler } from "./services/trust-domain";
+import { getPostPilotConfig, initPostPilotConnector, savePostPilotConfig } from "./services/postpilot";
 
 const storage = new Storage({
   area: "local",
@@ -38,8 +39,10 @@ chrome.runtime.onInstalled.addListener((object) => {
     chrome.tabs.create({ url: "https://multipost.app/on-install" });
   }
   initDefaultTrustedDomains();
+  void initPostPilotConnector();
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
 });
+void initPostPilotConnector();
 
 // Listen Message || 监听消息 || START
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -62,6 +65,14 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 let currentSyncData: SyncData | null = null;
 let currentPublishPopup: chrome.windows.Window | null = null;
 const defaultMessageHandler = (request, _sender, sendResponse) => {
+  if (request.action === "POSTPILOT_CONNECTOR_GET_CONFIG") {
+    getPostPilotConfig().then(sendResponse);
+    return true;
+  }
+  if (request.action === "POSTPILOT_CONNECTOR_SAVE_CONFIG") {
+    savePostPilotConfig(request.data).then(() => sendResponse({ ok: true })).catch((error) => sendResponse({ error: String(error) }));
+    return true;
+  }
   if (request.action === "MULTIPOST_EXTENSION_CHECK_SERVICE_STATUS") {
     sendResponse({ extensionId: chrome.runtime.id });
     return true;
