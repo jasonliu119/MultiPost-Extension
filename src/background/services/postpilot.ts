@@ -9,6 +9,8 @@ let polling = false;
 type Platform = "x" | "instagram" | "pinterest" | "rednote" | "douyin" | "tiktok" | "youtube" | "youtube_shorts";
 interface PostPilotJob { targetId: string; platform: Platform; title: string | null; body: string; mediaUrls: string[]; scheduledAt: string | null; }
 export interface PostPilotConfig { apiUrl: string; deviceToken: string; enabled: boolean; }
+export type PostPilotPollRun = { id: string; status: "idle" | "completed" | "partial" | "failed"; jobCount: number; publishedCount: number; failedCount: number; message: string; startedAt: string; completedAt: string };
+const pollHistoryKey = "postpilotPollHistory";
 
 const platformMap: Record<Platform, { text: string; media: string }> = {
   x: { text: "DYNAMIC_X", media: "DYNAMIC_X" },
@@ -41,6 +43,10 @@ export async function initPostPilotConnector() {
   if (config.enabled) await startPostPilotPolling();
 }
 
+export async function getPostPilotPollHistory() {
+  return (await storage.get<PostPilotPollRun[]>(pollHistoryKey)) || [];
+}
+
 export async function startPostPilotPolling() {
   await chrome.alarms.create(alarmName, { periodInMinutes: 0.5 });
   await pollPostPilotJobs();
@@ -63,14 +69,33 @@ async function api(config: PostPilotConfig, path: string, init?: RequestInit) {
 export async function pollPostPilotJobs() {
   if (polling) return;
   polling = true;
+  const startedAt = new Date().toISOString();
+  let config: PostPilotConfig | undefined;
   try {
-    const config = await getPostPilotConfig();
+    config = await getPostPilotConfig();
     if (!config.enabled || !config.deviceToken) return;
     const { jobs } = (await api(config, "/api/connector/jobs")) as { jobs: PostPilotJob[] };
-    for (const job of jobs) await runJob(config, job);
+    const results = [];
+    for (const job of jobs) results.push(await runJob(config, job));
+    const publishedCount = results.filter((result) => result.status === "published").length;
+    const failed = results.filter((result) => result.status === "failed");
+    const status = !jobs.length ? "idle" : failed.length ? (publishedCount ? "partial" : "failed") : "completed";
+    const message = !jobs.length ? "本次没有待发布任务。" : failed.length ? failed.map((result) => result.message).filter(Boolean).join("；") : `已处理 ${publishedCount} 个发布任务。`;
+    await recordPoll(config, { status, jobCount: jobs.length, publishedCount, failedCount: failed.length, message, startedAt, completedAt: new Date().toISOString() });
   } catch (error) {
     console.error("PostPilot polling failed:", error);
+    if (config) {
+      const message = error instanceof Error ? error.message : "Unknown connector error";
+      await recordPoll(config, { status: "failed", jobCount: 0, publishedCount: 0, failedCount: 0, message, startedAt, completedAt: new Date().toISOString() });
+    }
   } finally { polling = false; }
+}
+
+async function recordPoll(config: PostPilotConfig, run: Omit<PostPilotPollRun, "id">) {
+  const localRun: PostPilotPollRun = { id: crypto.randomUUID(), ...run };
+  const history = await getPostPilotPollHistory();
+  await storage.set(pollHistoryKey, [localRun, ...history].slice(0, 30));
+  await api(config, "/api/connector/polls", { method: "POST", body: JSON.stringify(run) }).catch((error) => console.error("PostPilot poll report failed:", error));
 }
 
 function mediaFile(url: string, index: number): FileData {
@@ -106,7 +131,7 @@ async function waitForTab(tabId: number) {
   });
 }
 
-async function runJob(config: PostPilotConfig, job: PostPilotJob) {
+async function runJob(config: PostPilotConfig, job: PostPilotJob): Promise<{ status: "published" | "failed"; message?: string }> {
   try {
     await api(config, `/api/connector/jobs/${job.targetId}`, { method: "PATCH", body: JSON.stringify({ status: "publishing" }) });
     const data = makeSyncData(job);
@@ -117,9 +142,11 @@ async function runJob(config: PostPilotConfig, job: PostPilotJob) {
     await waitForTab(tab.id);
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: platform.injectFunction, args: [data] });
     await api(config, `/api/connector/jobs/${job.targetId}`, { method: "PATCH", body: JSON.stringify({ status: "published" }) });
+    return { status: "published" };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown connector error";
     console.error(`PostPilot job ${job.targetId} failed:`, error);
     await api(config, `/api/connector/jobs/${job.targetId}`, { method: "PATCH", body: JSON.stringify({ status: "failed", error: message }) }).catch(() => undefined);
+    return { status: "failed", message: `${job.platform}: ${message}` };
   }
 }

@@ -16,7 +16,7 @@ import {
   tabsManagerMessageHandler,
 } from "./services/tabs";
 import { trustDomainMessageHandler } from "./services/trust-domain";
-import { getPostPilotConfig, initPostPilotConnector, savePostPilotConfig } from "./services/postpilot";
+import { getPostPilotConfig, getPostPilotPollHistory, initPostPilotConnector, pollPostPilotJobs, savePostPilotConfig } from "./services/postpilot";
 
 const storage = new Storage({
   area: "local",
@@ -71,6 +71,14 @@ const defaultMessageHandler = (request, _sender, sendResponse) => {
   }
   if (request.action === "POSTPILOT_CONNECTOR_SAVE_CONFIG") {
     savePostPilotConfig(request.data).then(() => sendResponse({ ok: true })).catch((error) => sendResponse({ error: String(error) }));
+    return true;
+  }
+  if (request.action === "POSTPILOT_CONNECTOR_GET_POLL_HISTORY") {
+    getPostPilotPollHistory().then(sendResponse);
+    return true;
+  }
+  if (request.action === "POSTPILOT_CONNECTOR_POLL_NOW") {
+    pollPostPilotJobs().then(() => getPostPilotPollHistory()).then(sendResponse).catch((error) => sendResponse({ error: String(error) }));
     return true;
   }
   if (request.action === "MULTIPOST_EXTENSION_CHECK_SERVICE_STATUS") {
