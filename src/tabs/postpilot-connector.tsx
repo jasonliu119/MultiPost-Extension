@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 type Config = { apiUrl: string; deviceToken: string; enabled: boolean };
 type PollRun = { id: string; status: "idle" | "completed" | "partial" | "failed"; jobCount: number; publishedCount: number; failedCount: number; message: string; completedAt: string };
 
-const defaultConfig: Config = { apiUrl: "https://auto-post-jason-weijie.vercel.app", deviceToken: "", enabled: false };
+const defaultConfig: Config = { apiUrl: "https://jev.dog", deviceToken: "", enabled: false };
 const statusLabels: Record<PollRun["status"], string> = { idle: "无待发任务", completed: "已完成", partial: "部分失败", failed: "轮询失败" };
 
 export default function PostPilotConnector() {
